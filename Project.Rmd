@@ -1,0 +1,90 @@
+---
+title: "Practical Machine Learning Course Project"
+author: "Ryan Diocampo"
+fig_width: 9
+output: "html_document"
+fig_height: 9
+---
+    
+## Background  
+Using devices such as _Jawbone Up_, _Nike FuelBand_, and _Fitbit_ it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how _much_ of a particular activity they do, but they rarely quantify how _well_ they do it. 
+In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. 
+
+More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+The training data for this project are available here:  https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv  
+
+The test data are available here: https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv 
+
+## Loading, cleaning, and partitioning data
+```{r, cache = FALSE}
+# clean slate
+cat("\014")
+rm(list = ls())
+
+setwd("~/AllR/DataScience/8.MachineLearning")
+train.raw   <- read.csv('./pml-training.csv', header = TRUE)
+test.raw    <- read.csv('./pml-testing.csv', header = TRUE)
+
+str(train.raw)
+```
+The dataset contains a lot of NAs which may not be useful in the prediction. To save in the computation, these inputs will be dropped. Also, remove the first 7 column as they pertain to the user. 
+```{r, cache = FALSE}
+train.raw   <- train.raw[ , complete.cases(t(test.raw))]
+train.raw   <- train.raw[ , -c(1:7)]
+test.raw    <- test.raw[ , complete.cases(t(test.raw))]
+test.raw    <- test.raw[ , -c(1:7)]
+```
+Since the project requires cross-validation, the original training set will be split into a new training and testing set. The original testing set will be the validation set. The cross-validation is defined in trControl.
+```{r, cache = FALSE}
+set.seed(1234)
+library(caret)
+train.in    <- createDataPartition(y = train.raw$classe, p = 0.7, list = FALSE)
+training    <- train.raw[train.in, ]
+testing     <- train.raw[-train.in, ]
+
+validation  <- test.raw
+
+control     <- trainControl(method = 'cv', number = 3)
+```
+
+## Building model
+I will be testing three models: linear discriminant analysis (lda), random forest (rf), and gradient boosting (gbm).
+```{r, cache = FALSE}
+lda <- train(classe ~., data = training, trControl = control, method = 'lda')
+save(lda, file = './lda.RData')
+
+rf <- train(classe ~., data = training, trControl = control, method = 'rf')
+save(rf, file = './rf.RData')
+
+gbm <- train(classe ~., data = training, trControl = control, method = 'gbm')
+save(gbm, file = './gbm.RData')
+```
+
+## Assessing the model
+The three models are now assessed on their performance. Shown below is the result.
+```{r}
+pred.lda    <- predict(lda, newdata = testing)
+cfm.lda     <- confusionMatrix(pred.lda, testing$classe)
+pred.gbm    <- predict(gbm, newdata = testing)
+cfm.gbm     <- confusionMatrix(pred.gbm, testing$classe)
+pred.rf     <- predict(rf, newdata = testing)
+cfm.rf      <- confusionMatrix(pred.rf, testing$classe)
+
+results     <- data.frame(Model = c('LDA', 'RF', 'GBM'),
+  Accuracy = rbind(cfm.lda$overall[1], cfm.rf$overall[1], cfm.gbm$overall[1])
+)
+print(results)
+```
+LDA performed poorly relative to the RF and GBM with RF performing slightly better than GBM. Shown below is the confusion matrix of RF. 
+```{r, echo = FALSE}
+print(cfm.rf)
+
+```
+
+## Predicing using RF
+There seems to be no need to stack the models on top of each other given the very high accuracy of RF. At an accuracy of 0.99, this is already a very good estimate of out-of-sample error.  Hence, it will be the model to be applied on the validation set. 
+```{r, echo = FALSE}
+val.rf <- predict(rf, newdata = validation)
+val.rf
+```
